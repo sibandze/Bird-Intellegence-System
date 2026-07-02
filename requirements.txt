@@ -2,7 +2,9 @@ torch
 torchaudio
 numpy
 librosa
+pandas
 scikit-learn
 fastapi
 uvicorn
 matplotlib
+pyyalm
