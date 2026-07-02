@@ -5,7 +5,7 @@ from pathlib import Path
 
 # Note the relative imports now that this is called from the root main.py
 from .download import download_audio
-from .preprocess_audio import preprocess_and_save
+from .process_audio import preprocess_and_save
 
 def run_data_pipeline(config):
     # Extract settings from the config dictionary
