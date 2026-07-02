@@ -1,7 +1,7 @@
 import os
 import requests
 
-def download_audio(url, filename, output_dir=AUDIO_DOWNLOADS_DIR):
+def download_audio(url, filename, output_dir):
     """
     Downloads an audio file from a given URL.
 
