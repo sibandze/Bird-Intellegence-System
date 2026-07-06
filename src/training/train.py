@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 # Import your custom modules
 from src.data.dataset import BirdSongDataset
-from src.models.bird_classifier import BirdClassifier  # Update path if needed
+from src.models.bird_classifier import BirdClassifier
 
 def get_dataloaders(config, df):
     """Splits the dataframe and creates PyTorch DataLoaders."""
@@ -64,12 +64,15 @@ def train_model(config):
 
     # 3. Initialize Model
     model = BirdClassifier(
-        num_classes=config['data']['num_classes'],
-        n_mels=config['audio']['n_mels'],
-        time_steps=config['audio']['segment_size'],
-        embed_dim=config['model']['embed_dim'],
-        depth=config['model']['depth'],
-        num_heads=config['model']['num_heads']
+        n_mels=config["audio"]["n_mels"],
+        patch_size=config["model"]["patch_size"],
+        embed_dim=config["model"]["embed_dim"],
+        num_layers=config["model"]["num_layers"],
+        heads=config["model"]["heads"],
+        forward_expansion=config["model"]["forward_expansion"],
+        dropout=config["model"]["dropout"],
+        num_classes=config["data"]["num_classes"],
+        time_steps=config["audio"]["segment_size"],
     ).to(device)
 
     # 4. Optimizer and Loss
