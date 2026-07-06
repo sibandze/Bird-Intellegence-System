@@ -26,5 +26,5 @@ model:
 training:
   batch_size: 32
   epochs: 50
-  learning_rate: 0.001
+  learning_rate: 0.0001
   device: "cuda" # or "cpu", "mps"
