@@ -1,4 +1,4 @@
-# config.yaml
+# configs/config.yaml
 
 data:
   raw_audio_dir: "data/raw_audio"
@@ -16,9 +16,12 @@ audio:
   segment_size: 187
 
 model:
-  embed_dim: 256
-  depth: 6
-  num_heads: 8
+    embed_dim: 256
+    num_layers: 6
+    heads: 8
+    patch_size: 25
+    forward_expansion: 4
+    dropout: 0.1
 
 training:
   batch_size: 32
