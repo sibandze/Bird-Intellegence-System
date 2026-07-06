@@ -1,0 +1,21 @@
+{
+    "name": "Bird Intelligence System Environment",
+    "image": "mcr.microsoft.com/devcontainers/python:3.10",
+
+    // Automatically install your dependencies right after the container is built
+    "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt",
+
+    // Essential VS Code extensions pre-installed inside the container
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-toolsai.jupyter"
+            ]
+        }
+    },
+
+    // Runs the container as non-root for security and permission mapping sanity
+    "remoteUser": "vscode"
+}
