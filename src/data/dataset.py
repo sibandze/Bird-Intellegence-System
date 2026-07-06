@@ -27,8 +27,15 @@ class BirdSongDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
-
         mel = load_local_spectrogram(row['local_spectrogram_path']) # (n_mels, T)
+
+        # NEW: Global Min-Max Normalization to bring dB values into safe [0, 1] range
+        # This prevents attention explosion from large negative dB values
+        mel_min, mel_max = mel.min(), mel.max()
+        if mel_max > mel_min:
+            mel = (mel - mel_min) / (mel_max - mel_min)
+        else:
+            mel = np.zeros_like(mel)
 
         T = mel.shape[1]
         if T > self.segment_size:
@@ -38,7 +45,7 @@ class BirdSongDataset(torch.utils.data.Dataset):
             pad = self.segment_size - T
             mel_segment = np.pad(mel, ((0,0),(0,pad)), mode='constant')
 
-        mel_segment = torch.from_numpy(mel_segment).float()
+        mel_segment = torch.from_numpy(mel_segment).float() # Kept fixed shape from earlier
         label = torch.tensor(int(row['scientific_name_id'])).long()
 
         return mel_segment, label
