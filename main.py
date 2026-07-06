@@ -3,7 +3,7 @@ import yaml
 from pathlib import Path
 
 from src.data.run_pipeline import run_data_pipeline
-# from src.training.train import train_model       # Uncomment when built
+from src.training.train import train_model  
 # from src.evaluation.evaluate import evaluate_model # Uncomment when built
 
  # Determine the absolute path of the project root (where main.py is located) and define the absolute path to the config file
@@ -17,10 +17,10 @@ def load_and_resolve_config(config_path):
     with open(full_config_path, "r") as file:
         config = yaml.safe_load(file)
 
-    # 3. Inject the root directory into the config for global awareness
+    # 2. Inject the root directory into the config for global awareness
     config['project_root'] = str(ROOT_DIR)
 
-    # 4. Resolve data paths
+    # 3. Resolve data paths
     if 'data' in config:
         data_cfg = config['data']
         # Convert relative string paths to absolute resolved strings
@@ -51,7 +51,7 @@ def main():
     # 2. Training Loop
     if args.train or args.all:
         print(">>> Starting Model Training...")
-        # train_model(config)
+        train_model(config)
 
     # 3. Evaluation
     if args.evaluate or args.all:
