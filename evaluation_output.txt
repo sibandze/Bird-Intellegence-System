@@ -4,17 +4,22 @@
 Extracting predictions...
 
 ================ CLASSIFICATION REPORT ================
-                           precision    recall  f1-score   support
+                             precision    recall  f1-score   support
 
-    Crypturellus cinereus       0.57      0.67      0.62         6
-       Nothocercus julius       0.67      0.67      0.67         6
-         Tinamus guttatus       0.50      1.00      0.67         6
-   Crypturellus bartletti       0.67      0.33      0.44         6
-Crypturellus parvirostris       1.00      0.33      0.50         6
+      Crypturellus cinereus       0.44      0.67      0.53         6
+         Nothocercus julius       0.43      0.50      0.46         6
+           Tinamus guttatus       0.43      0.50      0.46         6
+     Crypturellus bartletti       0.40      0.33      0.36         6
+  Crypturellus parvirostris       1.00      0.17      0.29         6
+    Crypturellus variegatus       0.60      0.50      0.55         6
+   Crypturellus strigulosus       0.00      0.00      0.00         6
+Crypturellus transfasciatus       0.00      0.00      0.00         6
+         Ortalis columbiana       0.42      0.83      0.56         6
+            Taoniscus nanus       0.38      0.83      0.53         6
 
-                 accuracy                           0.60        30
-                macro avg       0.68      0.60      0.58        30
-             weighted avg       0.68      0.60      0.58        30
+                   accuracy                           0.43        60
+                  macro avg       0.41      0.43      0.37        60
+               weighted avg       0.41      0.43      0.37        60
 
 =======================================================
 Saved evaluation matrix visualization to: /workspaces/Multimodedal-Bird-Intellegence-System/confusion_matrix.png

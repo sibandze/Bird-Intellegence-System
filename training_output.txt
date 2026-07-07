@@ -1,0 +1,71 @@
+>>> Starting Model Training...
+Training on device: cpu
+Data split: 236 training samples, 60 validation samples.
+
+Starting Training...
+Epoch 1/50 - Train Loss: 2.3105, Train Acc: 0.0720 | Val Loss: 2.2949, Val Acc: 0.0833
+  -> Saved new best model with Val Acc: 0.0833
+Epoch 2/50 - Train Loss: 2.2970, Train Acc: 0.1186 | Val Loss: 2.2924, Val Acc: 0.1167
+  -> Saved new best model with Val Acc: 0.1167
+Epoch 3/50 - Train Loss: 2.2969, Train Acc: 0.0720 | Val Loss: 2.2837, Val Acc: 0.1500
+  -> Saved new best model with Val Acc: 0.1500
+Epoch 4/50 - Train Loss: 2.2856, Train Acc: 0.1398 | Val Loss: 2.2618, Val Acc: 0.2000
+  -> Saved new best model with Val Acc: 0.2000
+Epoch 5/50 - Train Loss: 2.2681, Train Acc: 0.1610 | Val Loss: 2.2305, Val Acc: 0.2000
+Epoch 6/50 - Train Loss: 2.2336, Train Acc: 0.2076 | Val Loss: 2.1788, Val Acc: 0.2167
+  -> Saved new best model with Val Acc: 0.2167
+Epoch 7/50 - Train Loss: 2.2092, Train Acc: 0.2246 | Val Loss: 2.1771, Val Acc: 0.2500
+  -> Saved new best model with Val Acc: 0.2500
+Epoch 8/50 - Train Loss: 2.1731, Train Acc: 0.2161 | Val Loss: 2.1498, Val Acc: 0.2167
+Epoch 9/50 - Train Loss: 2.1354, Train Acc: 0.2754 | Val Loss: 2.1609, Val Acc: 0.2333
+Epoch 10/50 - Train Loss: 2.1456, Train Acc: 0.2076 | Val Loss: 2.1254, Val Acc: 0.2167
+Epoch 11/50 - Train Loss: 2.1042, Train Acc: 0.2331 | Val Loss: 2.0852, Val Acc: 0.3000
+  -> Saved new best model with Val Acc: 0.3000
+Epoch 12/50 - Train Loss: 2.1368, Train Acc: 0.2373 | Val Loss: 2.1046, Val Acc: 0.3333
+  -> Saved new best model with Val Acc: 0.3333
+Epoch 13/50 - Train Loss: 2.0719, Train Acc: 0.2119 | Val Loss: 2.0707, Val Acc: 0.2833
+Epoch 14/50 - Train Loss: 2.0500, Train Acc: 0.2839 | Val Loss: 2.0685, Val Acc: 0.2833
+Epoch 15/50 - Train Loss: 2.0441, Train Acc: 0.2924 | Val Loss: 2.0496, Val Acc: 0.3833
+  -> Saved new best model with Val Acc: 0.3833
+Epoch 16/50 - Train Loss: 2.0004, Train Acc: 0.3093 | Val Loss: 2.1154, Val Acc: 0.2667
+Epoch 17/50 - Train Loss: 2.0281, Train Acc: 0.2712 | Val Loss: 2.0452, Val Acc: 0.2833
+Epoch 18/50 - Train Loss: 2.0077, Train Acc: 0.2924 | Val Loss: 2.0294, Val Acc: 0.3333
+Epoch 19/50 - Train Loss: 1.9921, Train Acc: 0.2712 | Val Loss: 2.0690, Val Acc: 0.2667
+Epoch 20/50 - Train Loss: 2.0237, Train Acc: 0.2627 | Val Loss: 2.1556, Val Acc: 0.2833
+Epoch 21/50 - Train Loss: 2.0531, Train Acc: 0.2415 | Val Loss: 2.1374, Val Acc: 0.1667
+Epoch 22/50 - Train Loss: 2.0038, Train Acc: 0.2839 | Val Loss: 2.1170, Val Acc: 0.2500
+Epoch 23/50 - Train Loss: 2.0420, Train Acc: 0.2203 | Val Loss: 2.0291, Val Acc: 0.4000
+  -> Saved new best model with Val Acc: 0.4000
+Epoch 24/50 - Train Loss: 1.9613, Train Acc: 0.2924 | Val Loss: 2.0406, Val Acc: 0.3000
+Epoch 25/50 - Train Loss: 1.9287, Train Acc: 0.3136 | Val Loss: 2.0047, Val Acc: 0.4000
+Epoch 26/50 - Train Loss: 1.8999, Train Acc: 0.3263 | Val Loss: 1.9865, Val Acc: 0.3667
+Epoch 27/50 - Train Loss: 1.9004, Train Acc: 0.3305 | Val Loss: 1.9956, Val Acc: 0.3000
+Epoch 28/50 - Train Loss: 1.8633, Train Acc: 0.3602 | Val Loss: 1.9979, Val Acc: 0.3333
+Epoch 29/50 - Train Loss: 1.8821, Train Acc: 0.3220 | Val Loss: 2.1046, Val Acc: 0.2833
+Epoch 30/50 - Train Loss: 1.8477, Train Acc: 0.3475 | Val Loss: 1.9618, Val Acc: 0.3333
+Epoch 31/50 - Train Loss: 1.8328, Train Acc: 0.3686 | Val Loss: 2.0528, Val Acc: 0.3000
+Epoch 32/50 - Train Loss: 1.7957, Train Acc: 0.3686 | Val Loss: 1.9611, Val Acc: 0.3667
+Epoch 33/50 - Train Loss: 1.8093, Train Acc: 0.3686 | Val Loss: 2.0688, Val Acc: 0.3333
+Epoch 34/50 - Train Loss: 1.8069, Train Acc: 0.3517 | Val Loss: 2.0370, Val Acc: 0.3333
+Epoch 35/50 - Train Loss: 1.7657, Train Acc: 0.3814 | Val Loss: 1.9761, Val Acc: 0.4167
+  -> Saved new best model with Val Acc: 0.4167
+Epoch 36/50 - Train Loss: 1.8287, Train Acc: 0.3220 | Val Loss: 1.9913, Val Acc: 0.3500
+Epoch 37/50 - Train Loss: 1.7325, Train Acc: 0.4195 | Val Loss: 2.0245, Val Acc: 0.3500
+Epoch 38/50 - Train Loss: 1.7314, Train Acc: 0.3856 | Val Loss: 1.9091, Val Acc: 0.3500
+Epoch 39/50 - Train Loss: 1.7525, Train Acc: 0.4025 | Val Loss: 1.9569, Val Acc: 0.3167
+Epoch 40/50 - Train Loss: 1.6784, Train Acc: 0.3941 | Val Loss: 1.9756, Val Acc: 0.3500
+Epoch 41/50 - Train Loss: 1.8028, Train Acc: 0.3898 | Val Loss: 1.9982, Val Acc: 0.3333
+Epoch 42/50 - Train Loss: 1.8940, Train Acc: 0.2924 | Val Loss: 1.9764, Val Acc: 0.3500
+Epoch 43/50 - Train Loss: 1.6994, Train Acc: 0.4195 | Val Loss: 1.9036, Val Acc: 0.3667
+Epoch 44/50 - Train Loss: 1.7514, Train Acc: 0.3602 | Val Loss: 2.0016, Val Acc: 0.3833
+Epoch 45/50 - Train Loss: 1.6982, Train Acc: 0.4153 | Val Loss: 1.9916, Val Acc: 0.3667
+Epoch 46/50 - Train Loss: 1.7815, Train Acc: 0.3644 | Val Loss: 1.9758, Val Acc: 0.2667
+Epoch 47/50 - Train Loss: 1.6993, Train Acc: 0.4068 | Val Loss: 1.8739, Val Acc: 0.4333
+  -> Saved new best model with Val Acc: 0.4333
+Epoch 48/50 - Train Loss: 1.6307, Train Acc: 0.4661 | Val Loss: 1.8660, Val Acc: 0.3667
+Epoch 49/50 - Train Loss: 1.7438, Train Acc: 0.3898 | Val Loss: 2.0127, Val Acc: 0.3667
+Epoch 50/50 - Train Loss: 1.6921, Train Acc: 0.3983 | Val Loss: 1.8761, Val Acc: 0.3500
+
+Training Complete!
+Best Validation Accuracy: 0.4333
+Model saved to: /workspaces/Multimodedal-Bird-Intellegence-System/checkpoints/best_model.pth
