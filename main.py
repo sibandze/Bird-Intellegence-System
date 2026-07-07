@@ -4,7 +4,7 @@ from pathlib import Path
 
 from src.data.run_pipeline import run_data_pipeline
 from src.training.train import train_model  
-# from src.evaluation.evaluate import evaluate_model # Uncomment when built
+from src.evaluation.evaluate import evaluate_model
 
  # Determine the absolute path of the project root (where main.py is located) and define the absolute path to the config file
 ROOT_DIR = Path(__file__).resolve().parent
@@ -56,7 +56,7 @@ def main():
     # 3. Evaluation
     if args.evaluate or args.all:
         print(">>> Starting Evaluation and Analysis...")
-        # evaluate_model(config)
+        evaluate_model(config)
 
     if not (args.pipeline or args.train or args.evaluate or args.all):
         print("No action specified. Use --help to see available arguments.")
