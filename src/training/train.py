@@ -57,10 +57,6 @@ def train_model(config):
 
     # 2. Load Data
     csv_path = resolve_metadata_csv_path(config)
-    # TODO remove if statement, because resolve_metadata_csv_path should raise exc if file doesn't exist
-    if not os.path.exists(csv_path):
-        raise FileNotFoundError(f"Processed CSV not found at {csv_path}. Run --pipeline first.")
-    
     df = pd.read_csv(csv_path)
     train_loader, test_loader = get_dataloaders(config, df)
 
