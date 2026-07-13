@@ -49,7 +49,11 @@ def run_data_pipeline(config):
         url = row['Download_link']
 
         audio_filename = f"{xc_id}.ogg"
-        npy_filename = f"{xc_id}.npy"
+        npy_filename = (
+            f"{xc_id}_sr{audio_cfg['sr']}_nfft{audio_cfg['n_fft']}"
+            f"_hop{audio_cfg['hop_length']}_nmel{audio_cfg['n_mels']}"
+            f"_seg{audio_cfg['segment_size']}.npy"
+        )
 
         local_audio_path = RAW_AUDIO_DIR / audio_filename
         local_npy_path = PROCESSED_NPY_DIR / npy_filename
@@ -84,6 +88,7 @@ def run_data_pipeline(config):
         if success:
             row_dict = row.to_dict()
             row_dict['scientific_name_id'] = sci_to_id[row['scientific_name']]
+            row_dict['spectrogram_filename'] = npy_filename
             row_dict['local_spectrogram_path'] = str(local_npy_path)
             processed_rows.append(row_dict)
         else:
