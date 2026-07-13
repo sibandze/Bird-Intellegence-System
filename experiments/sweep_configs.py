@@ -1,3 +1,4 @@
+# experiments/sweep_configs.py
 """Hyperparameter sweep configurations for experiments."""
 
 from typing import List, Dict, Any
