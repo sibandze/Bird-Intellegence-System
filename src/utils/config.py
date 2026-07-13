@@ -12,13 +12,16 @@ def resolve_metadata_csv_path(config):
     metadata_dir_path = Path(metadata_dir)
     
     if not metadata_dir_path.exists() or not metadata_dir_path.is_dir():
+        # TODO: If folder doesn't exist, create it, then raise file not found error as the file with spec audio cfg doesn't exist
         raise FileNotFoundError(f"Metadata directory does not exist: {metadata_dir_path}")
     
     csv_files = sorted(metadata_dir_path.glob("*.csv"))
     
     if not csv_files:
         raise FileNotFoundError(f"No metadata CSV files found in {metadata_dir_path}")
-    
+
+
+    # TODO: just check for the file metadata_sr32000_nfft048_hop512_nmel12_seg187.cvs values from cfg
     # If there's only one CSV, return it
     if len(csv_files) == 1:
         return str(csv_files[0])
