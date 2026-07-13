@@ -94,7 +94,12 @@ def run_data_pipeline(config):
         else:
             print(f"  ⚠️ Spectrogram processing failed for {xc_id}.")
 
-    output_metadata_csv = Path(data_cfg['metadata_csv'])
+    output_metadata_csv = Path(data_cfg['metadata_dir']) / (
+        f"metadata_sr{audio_cfg['sr']}_nfft{audio_cfg['n_fft']}"
+        f"_hop{audio_cfg['hop_length']}_nmel{audio_cfg['n_mels']}"
+        f"_seg{audio_cfg['segment_size']}.csv"
+    )
+    
     # Ensure parent dir exists if modified in config
     os.makedirs(output_metadata_csv.parent, exist_ok=True) 
     
