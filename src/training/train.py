@@ -19,25 +19,25 @@ def get_dataloaders(config, df):
     """Splits the dataframe and creates PyTorch DataLoaders."""
     batch_size = config['training']['batch_size']
     segment_size = config['audio']['segment_size']
-    
+
     # Stratified split to ensure equal class representation in train and test
     train_df, test_df = train_test_split(
-        df, 
-        test_size=0.2, 
-        random_state=42, 
+        df,
+        test_size=0.2,
+        random_state=42,
         stratify=df['scientific_name_id']
     )
-    
+
     print(f"Data split: {len(train_df)} training samples, {len(test_df)} validation samples.")
 
     # Create Datasets
     train_dataset = BirdSongDataset(df=train_df, segment_size=segment_size, train=True)
-    
+
     # Pass the train label map to test to ensure class IDs match perfectly
     test_dataset = BirdSongDataset(
-        df=test_df, 
-        segment_size=segment_size, 
-        train=False, 
+        df=test_df,
+        segment_size=segment_size,
+        train=False,
         label_to_idx=train_dataset.label_to_idx
     )
 
@@ -51,7 +51,7 @@ def train_model(config):
     # 1. Setup device and directories
     device = torch.device(config['training']['device'] if torch.cuda.is_available() else "cpu")
     print(f"Training on device: {device}")
-    
+
     checkpoint_dir = Path(config['project_root']) / "checkpoints"
     os.makedirs(checkpoint_dir, exist_ok=True)
 
@@ -88,7 +88,7 @@ def train_model(config):
         train_loss = 0.0
         train_correct = 0
         train_total = 0
-        
+
         # Use tqdm for a nice progress bar
         pbar = tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs} [Train]")
         for mel_segments, labels in pbar:
@@ -108,7 +108,7 @@ def train_model(config):
             _, predicted = logits.max(1)
             train_total += labels.size(0)
             train_correct += predicted.eq(labels).sum().item()
-            
+
             pbar.set_postfix({'loss': f"{loss.item():.4f}"})
 
         train_acc = train_correct / train_total
