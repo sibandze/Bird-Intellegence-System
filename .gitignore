@@ -209,3 +209,42 @@ __marimo__/
 # Ignore local data assets
 data/processed_spectrograms/
 *.tar.gz
+
+# ============================================================================
+# Project-specific exclusions (Large experiment results & model checkpoints)
+# ============================================================================
+
+# Experiment results (can be very large - CSVs, JSONs, reports)
+results/
+experiments/results/
+
+# Model checkpoints (large .pth files - typically 100+ MB each)
+checkpoints/
+*.pth
+*.pt
+
+# Generated plots and confusion matrices
+*.png
+!confusion_matrix.png
+
+# Training/evaluation output logs
+training_output.txt
+evaluation_output.txt
+output.txt
+
+# Raw audio data (should be downloaded fresh or stored separately)
+data/raw_audio/
+data/raw_audio_backup/
+
+# Temporary experiment files
+experiments/.experiments_temp/
+experiments/.cache/
+
+# VS Code workspace settings
+.vscode/
+
+# macOS
+.DS_Store
+*.swp
+*.swo
+*~
