@@ -14,6 +14,8 @@ audio:
   hop_length: 512
   n_mels: 128
   segment_size: 187
+  min_db: 0.0
+  max_db: -80.0
 
 model:
     embed_dim: 256
