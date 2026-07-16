@@ -1,34 +1,14 @@
 import argparse
-import yaml
 from pathlib import Path
 
 from src.data.run_pipeline import run_data_pipeline
-from src.training.train import train_model  
+from src.training.train import train_model
 from src.evaluation.evaluate import evaluate_model
+from src.utils.configs import load_and_resolve_config  # use the centralized config loader
 
- # Determine the absolute path of the project root (where main.py is located) and define the absolute path to the config file
+# Determine the absolute path of the project root (where main.py is located) and define the absolute path to the config file
 ROOT_DIR = Path(__file__).resolve().parent
 CONFIG_FILE_PATH = "configs/config.yaml"
-
-def load_and_resolve_config(config_path):
-    """Loads the YAML config and resolves all relative paths to absolute paths."""
-    # 1. Load the YAML file
-    full_config_path = ROOT_DIR / config_path
-    with open(full_config_path, "r") as file:
-        config = yaml.safe_load(file)
-
-    # 2. Inject the root directory into the config for global awareness
-    config['project_root'] = str(ROOT_DIR)
-
-    # 3. Resolve data paths
-    if 'data' in config:
-        data_cfg = config['data']
-        # Convert relative string paths to absolute resolved strings
-        data_cfg['data_csv'] = str(ROOT_DIR / data_cfg['data_csv'])
-        data_cfg['raw_audio_dir'] = str(ROOT_DIR / data_cfg['raw_audio_dir'])
-        data_cfg['processed_npy_dir'] = str(ROOT_DIR / data_cfg['processed_npy_dir'])
-        data_cfg['metadata_dir'] = str(ROOT_DIR / data_cfg['metadata_dir'])
-    return config
 
 def main():
     parser = argparse.ArgumentParser(description="Bird Intelligence System Orchestrator")
@@ -40,8 +20,8 @@ def main():
 
     args = parser.parse_args()
 
-    # Load and resolve all paths
-    config = load_and_resolve_config(args.config)
+    # Load and resolve all paths using the centralized loader
+    config = load_and_resolve_config(ROOT_DIR, args.config)
 
     # 1. Data Pipeline
     if args.pipeline or args.all:
