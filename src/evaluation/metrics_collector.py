@@ -1,3 +1,4 @@
+# src/evaluation/metrics_collector.py
 """Comprehensive metrics collection for model evaluation."""
 
 import json
