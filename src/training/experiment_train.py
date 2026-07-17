@@ -1,3 +1,5 @@
+# src/training/experiment_train.py
+
 """Training function adapted for experiments with enhanced logging."""
 
 import os
@@ -15,7 +17,7 @@ import numpy as np
 
 from src.data.dataset import BirdSongDataset
 from src.models.bird_classifier import BirdClassifier
-from src.utils.config import resolve_metadata_csv_path
+from src.utils.configs import resolve_metadata_csv_path
 from src.evaluation.metrics_collector import MetricsCollector
 
 
@@ -35,7 +37,10 @@ class ExperimentTrainer:
     def get_dataloaders(self, df: pd.DataFrame) -> Tuple[DataLoader, DataLoader, Dict[str, int], Dict[int, str]]:
         """Create train/val dataloaders and label mappings."""
         batch_size = self.config['training']['batch_size']
+        num_workers = self.config['training']['num_workers']
         segment_size = self.config['audio']['segment_size']
+        min_db = self.config['audio']['min_db']
+        max_db = self.config['audio']['max_db']
         
         train_df, test_df = train_test_split(
             df,
@@ -49,14 +54,18 @@ class ExperimentTrainer:
             df=train_df,
             segment_size=segment_size,
             train=True,
-            spec_aug_config=self._get_augmentation_config()
+            spec_aug_config=self._get_augmentation_config(),
+            min_db=min_db,
+            max_db=max_db,
         )
         
         test_dataset = BirdSongDataset(
             df=test_df,
             segment_size=segment_size,
             train=False,
-            label_to_idx=train_dataset.label_to_idx
+            label_to_idx=train_dataset.label_to_idx,            
+            min_db=min_db,
+            max_db=max_db,
         )
         
         # Create dataloaders
@@ -64,13 +73,13 @@ class ExperimentTrainer:
             train_dataset,
             batch_size=batch_size,
             shuffle=True,
-            num_workers=2
+            num_workers=num_workers
         )
         test_loader = DataLoader(
             test_dataset,
             batch_size=batch_size,
             shuffle=False,
-            num_workers=2
+            num_workers=num_workers
         )
         
         label_to_idx = train_dataset.label_to_idx
