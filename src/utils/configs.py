@@ -1,3 +1,5 @@
+# src/utils/configs.py
+
 """Configuration loading and resolution utilities."""
 
 import math
