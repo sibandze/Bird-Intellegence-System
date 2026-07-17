@@ -9,7 +9,7 @@ import seaborn as sns
 
 from src.data.dataset import BirdSongDataset
 from src.models.bird_classifier import BirdClassifier
-from src.utils.config import resolve_metadata_csv_path
+from src.utils.configs import resolve_metadata_csv_path
 
 def evaluate_model(config):
     device = torch.device(config['training']['device'] if torch.cuda.is_available() else "cpu")
