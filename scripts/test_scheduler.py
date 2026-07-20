@@ -1,3 +1,4 @@
+# scripts/test_scheduler.py
 """Quick test to verify scheduler integration."""
 
 import torch
