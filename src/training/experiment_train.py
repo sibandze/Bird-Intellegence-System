@@ -19,7 +19,7 @@ from src.data.dataset import BirdSongDataset
 from src.models.bird_classifier import BirdClassifier
 from src.utils.configs import resolve_metadata_csv_path
 from src.evaluation.metrics_collector import MetricsCollector
-
+from src.training.scheduler import create_scheduler, get_scheduler_step_frequency
 
 class ExperimentTrainer:
     """Training orchestrator for experiments with comprehensive logging."""
@@ -98,17 +98,17 @@ class ExperimentTrainer:
             'num_time_masks': aug_cfg.get('num_time_masks', 2),
             'time_mask_param': aug_cfg.get('time_mask_param', 10),
         }
-    
+
     def train(self, df: pd.DataFrame) -> Dict[str, Any]:
         """Run full training loop with experiment logging."""
         print(f"\n>>> Training with config:")
         print(f"    Device: {self.device}")
         print(f"    Run dir: {self.run_dir}")
-        
+
         # Setup dataloaders
         train_loader, test_loader, label_to_idx, idx_to_label = self.get_dataloaders(df)
         class_names = [idx_to_label[i] for i in range(len(idx_to_label))]
-        
+
         # Initialize model
         model = BirdClassifier(
             n_mels=self.config["audio"]["n_mels"],
@@ -121,17 +121,37 @@ class ExperimentTrainer:
             num_classes=self.config["data"]["num_classes"],
             time_steps=self.config["audio"]["segment_size"],
         ).to(self.device)
-        
+
         # Setup training
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.AdamW(
             model.parameters(),
             lr=self.config['training']['learning_rate'],
-            weight_decay=self.config['training'].get('weight_decay', 0.0)
+            weight_decay=self.config['training'].get('weight_decay', 0.01)
         )
-        
+
         epochs = self.config['training']['epochs']
-        
+
+        # Setup Scheduler
+        scheduler_type = self.config['training'].get('scheduler_type', 'cosine')
+        warmup_steps = self.config['training'].get('warmup_steps', 0)
+        total_steps = len(train_loader) * epochs
+    
+        scheduler = create_scheduler(
+            optimizer=optimizer,
+            scheduler_type=scheduler_type,
+            warmup_steps=warmup_steps,
+            total_steps=total_steps,
+            min_lr=self.config['training'].get('min_lr', 1e-6)
+        )
+    
+        step_frequency = get_scheduler_step_frequency(scheduler_type)
+    
+        if scheduler is not None:
+            print(f"    Scheduler: {scheduler_type} (warmup: {warmup_steps}, step: {step_frequency})")
+        else:
+            print(f"    Scheduler: constant LR")
+
         # Training loop
         for epoch in range(epochs):
             # Training phase
@@ -139,56 +159,69 @@ class ExperimentTrainer:
             train_loss = 0.0
             train_correct = 0
             train_total = 0
-            
+
             for mel_segments, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs} [Train]", leave=False):
                 mel_segments, labels = mel_segments.to(self.device), labels.to(self.device)
-                
+
                 optimizer.zero_grad()
                 logits = model(mel_segments)
                 loss = criterion(logits, labels)
                 loss.backward()
                 optimizer.step()
-                
+
+                # Step scheduler per batch
+                if scheduler is not None and step_frequency == 'batch':
+                    scheduler.step()
+
                 train_loss += loss.item() * labels.size(0)
                 preds = torch.argmax(logits, dim=1)
                 train_correct += (preds == labels).sum().item()
                 train_total += labels.size(0)
-            
+
             avg_train_loss = train_loss / train_total
             train_acc = train_correct / train_total
-            
+
             # Validation phase
             model.eval()
             val_loss = 0.0
             val_correct = 0
             val_total = 0
-            
+
             with torch.no_grad():
                 for mel_segments, labels in tqdm(test_loader, desc=f"Epoch {epoch+1}/{epochs} [Val]", leave=False):
                     mel_segments, labels = mel_segments.to(self.device), labels.to(self.device)
                     logits = model(mel_segments)
                     loss = criterion(logits, labels)
-                    
+
                     val_loss += loss.item() * labels.size(0)
                     preds = torch.argmax(logits, dim=1)
                     val_correct += (preds == labels).sum().item()
                     val_total += labels.size(0)
-            
+
             avg_val_loss = val_loss / val_total
             val_acc = val_correct / val_total
-            
-            # Log epoch
+
+            # Step scheduler per epoch
+            if scheduler is not None and step_frequency == 'epoch':
+                if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+                    scheduler.step(avg_val_loss)
+                else:
+                    scheduler.step()
+
+            # Log epoch (add LR to logs)
             epoch_log = {
                 'epoch': epoch + 1,
                 'train_loss': avg_train_loss,
                 'train_acc': train_acc,
                 'val_loss': avg_val_loss,
                 'val_acc': val_acc,
+                'learning_rate': optimizer.param_groups[0]['lr'],  # NEW
             }
             self.training_history.append(epoch_log)
-            
-            print(f"Epoch {epoch+1}/{epochs} | Train Loss: {avg_train_loss:.4f} | Train Acc: {train_acc:.4f} | Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.4f}")
-            
+
+            print(f"Epoch {epoch+1}/{epochs} | Train Loss: {avg_train_loss:.4f} | Train Acc: {train_acc:.4f} | "
+                  f"Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.4f} | LR: {optimizer.param_groups[0]['lr']:.2e}")
+
             # Save best model
             if val_acc > self.best_val_acc:
                 self.best_val_acc = val_acc
@@ -196,7 +229,7 @@ class ExperimentTrainer:
                 best_model_path = self.run_dir / "best_model.pth"
                 torch.save(model.state_dict(), best_model_path)
                 print(f"    ✓ Saved best model (val_acc: {val_acc:.4f})")
-        
+
         # Save training history
         self._save_training_history()
         
