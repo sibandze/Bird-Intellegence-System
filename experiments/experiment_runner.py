@@ -20,19 +20,23 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from experiments.sweep_configs import SWEEP_SUITES
 from src.training.experiment_train import ExperimentTrainer
+from src.utils.configs import load_and_resolve_config
 
 
 class ExperimentManager:
     """Manages experiment runs and result collection."""
+    
+    # Define root_dir at class level
+    ROOT_DIR = Path(__file__).parent.parent
 
     def __init__(self, base_config_path: str, results_dir: str = "results"):
         self.base_config_path = Path(base_config_path)
         self.results_dir = Path(results_dir)
         self.results_dir.mkdir(exist_ok=True, parents=True)
         
-        # Load base config
-        with open(self.base_config_path, "r") as f:
-            self.base_config = yaml.safe_load(f)
+        # Load base config using utility function
+        config_rel_path = str(self.base_config_path.relative_to(self.ROOT_DIR)) if self.base_config_path.is_absolute() else str(self.base_config_path)
+        self.base_config = load_and_resolve_config(self.ROOT_DIR, config_rel_path)
         
         self.experiment_name = None
         self.experiment_dir = None
@@ -54,7 +58,7 @@ class ExperimentManager:
         """Load dataset once and cache it."""
         if self.df is None:
             import pandas as pd
-            from src.utils.config import resolve_metadata_csv_path
+            from src.utils.configs import resolve_metadata_csv_path
             
             csv_path = resolve_metadata_csv_path(self.base_config)
             if not os.path.exists(csv_path):
