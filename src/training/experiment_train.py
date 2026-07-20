@@ -20,6 +20,8 @@ from src.models.bird_classifier import BirdClassifier
 from src.utils.configs import resolve_metadata_csv_path
 from src.evaluation.metrics_collector import MetricsCollector
 from src.training.scheduler import create_scheduler, get_scheduler_step_frequency
+from src.training.precision import PrecisionManager
+
 
 class ExperimentTrainer:
     """Training orchestrator for experiments with comprehensive logging."""
@@ -30,6 +32,12 @@ class ExperimentTrainer:
         self.run_dir.mkdir(exist_ok=True, parents=True)
         
         self.device = torch.device(config['training'].get('device', 'cuda') if torch.cuda.is_available() else 'cpu')
+        self.amp_mgr = MixedPrecisionManager(
+            enabled=config["training"].get("mixed_precision", {}).get("enabled", True),
+            device=self.device.type,
+            use_bfloat16=config["training"].get("mixed_precision", {}).get("use_bfloat16", False),
+        )
+
         self.training_history = []
         self.best_val_acc = 0.0
         self.best_epoch = 0
@@ -163,11 +171,25 @@ class ExperimentTrainer:
             for mel_segments, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs} [Train]", leave=False):
                 mel_segments, labels = mel_segments.to(self.device), labels.to(self.device)
 
-                optimizer.zero_grad()
-                logits = model(mel_segments)
-                loss = criterion(logits, labels)
-                loss.backward()
-                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+
+                with self.amp_mgr.autocast():
+                   logits = model(mel_segments)
+                   loss = criterion(logits, labels)
+
+                self.amp_mgr.scale_loss(loss).backward()
+
+                gradient_clip_val = self.config["training"].get("gradient_clip")
+
+                if gradient_clip_val is not None:
+                    self.amp_mgr.unscale_gradients(optimizer)
+                    torch.nn.utils.clip_grad_norm_(
+                        model.parameters(),
+                        gradient_clip_val,
+                     )
+
+                self.amp_mgr.step(optimizer)
+                self.amp_mgr.update()
 
                 # Step scheduler per batch
                 if scheduler is not None and step_frequency == 'batch':
@@ -190,8 +212,10 @@ class ExperimentTrainer:
             with torch.no_grad():
                 for mel_segments, labels in tqdm(test_loader, desc=f"Epoch {epoch+1}/{epochs} [Val]", leave=False):
                     mel_segments, labels = mel_segments.to(self.device), labels.to(self.device)
-                    logits = model(mel_segments)
-                    loss = criterion(logits, labels)
+
+                    with self.amp_mgr.autocast():
+                       logits = model(mel_segments)
+                       loss = criterion(logits, labels)
 
                     val_loss += loss.item() * labels.size(0)
                     preds = torch.argmax(logits, dim=1)
