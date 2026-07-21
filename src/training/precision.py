@@ -1,54 +1,63 @@
-# src/training/mixed_precision.py
+# src/training/precision.py
 """
-Automatic Mixed Precision (AMP) manager.
+Precision Manager.
 
-Supports:
-- FP16 mixed precision with gradient scaling
-- BF16 mixed precision (no scaling needed)
-- Full FP32 fallback
-- Gradient clipping with automatic unscaling
-- Checkpoint save/load for training resumption
+Provides a unified interface for:
 
-Designed for research workflows where precision mode
-is controlled via configuration.
+- FP32 training
+- FP16 Automatic Mixed Precision (AMP)
+- BF16 Automatic Mixed Precision
+- Gradient scaling
+- Gradient clipping support
+- Checkpoint save/load
+- Training statistics
+
+Designed so the training loop never needs to know which precision
+mode is currently active.
 """
 
 from __future__ import annotations
 
-from typing import Optional
 from contextlib import nullcontext
 import logging
+from typing import Optional
 
 import torch
-import torch.cuda.amp as amp
 
 logger = logging.getLogger(__name__)
 
 
 class PrecisionManager:
     """
-    Manages Automatic Mixed Precision training.
+    Handles training precision.
 
-    Handles:
-        - autocast context selection (FP16 / BF16 / FP32)
-        - Gradient scaling (FP16 only)
-        - Gradient unscaling before clipping
-        - State serialization for checkpointing
+    Modes
+    -----
+    FP32
+        Standard training.
+
+    FP16
+        Automatic mixed precision with GradScaler.
+
+    BF16
+        Automatic mixed precision without GradScaler.
 
     Parameters
     ----------
-    enabled : bool
-        Whether to enable AMP.
+    enabled:
+        Enable mixed precision.
 
-    device : str
-        Device string (AMP only works on CUDA).
+    device:
+        "cuda", "cpu", or "mps"
 
-    use_bfloat16 : bool
-        Use BF16 instead of FP16. Requires Ampere+ GPU.
-        BF16 has more dynamic range and needs no gradient scaling.
+    use_bfloat16:
+        Prefer BF16 when available.
 
-    scale_window : int
-        Window for dynamic growth of the gradient scale factor.
+    init_scale:
+        Initial gradient scale.
+
+    growth_interval:
+        Number of successful optimizer steps before scale increases.
     """
 
     def __init__(
@@ -56,119 +65,178 @@ class PrecisionManager:
         enabled: bool = True,
         device: str = "cuda",
         use_bfloat16: bool = False,
-        scale_window: int = 2000,
-    ) -> None:
-        self._enabled = enabled and device == "cuda" and torch.cuda.is_available()
-        self._device = device
-        self._use_bfloat16 = use_bfloat16
-        self._scale_window = scale_window
+        init_scale: float = 2.0 ** 16,
+        growth_interval: int = 2000,
+    ):
 
-        if not self._enabled:
+        self.device = device
+
+        self.enabled = (
+            enabled
+            and device == "cuda"
+            and torch.cuda.is_available()
+        )
+
+        self.use_bfloat16 = use_bfloat16
+
+        self.scaler: Optional[torch.amp.GradScaler] = None
+
+        # --------------------------------------------------------------
+        # FP32
+        # --------------------------------------------------------------
+
+        if not self.enabled:
             self.dtype = torch.float32
-            self.scaler = None
-            logger.info("AMP disabled – using FP32")
+            logger.info("Precision: FP32")
             return
+
+        # --------------------------------------------------------------
+        # BF16
+        # --------------------------------------------------------------
 
         if use_bfloat16 and torch.cuda.is_bf16_supported():
             self.dtype = torch.bfloat16
-            self.scaler = None
-            logger.info("AMP enabled – BF16 (no gradient scaling)")
-        else:
-            self.dtype = torch.float16
-            self.scaler = amp.GradScaler(
-                init_scale=2.0**16,
-                growth_factor=2.0,
-                backoff_factor=0.5,
-                growth_interval=scale_window,
-                enabled=True,
-            )
-            logger.info(
-                "AMP enabled – FP16 with gradient scaling "
-                "(window=%d steps)", scale_window
-            )
 
-    # ------------------------------------------------------------------
-    # Properties
-    # ------------------------------------------------------------------
+            logger.info("Precision: BF16")
 
-    @property
-    def enabled(self) -> bool:
-        """Whether AMP is active."""
-        return self._enabled
+            return
 
-    # ------------------------------------------------------------------
-    # Core API
-    # ------------------------------------------------------------------
+        # --------------------------------------------------------------
+        # FP16
+        # --------------------------------------------------------------
+
+        self.dtype = torch.float16
+
+        self.scaler = torch.amp.GradScaler(
+            "cuda",
+            init_scale=init_scale,
+            growth_interval=growth_interval,
+        )
+
+        logger.info("Precision: FP16")
+
+    # ==============================================================
+    # Context manager
+    # ==============================================================
 
     def autocast(self):
         """
-        Context manager for automatic dtype selection.
+        Returns autocast context.
 
         Usage
         -----
-        with amp_manager.autocast():
-            logits = model(inputs)
-            loss = criterion(logits, labels)
+        with precision.autocast():
+            logits = model(x)
         """
-        if self._enabled:
-            return amp.autocast(device_type="cuda", dtype=self.dtype)
-        return nullcontext()
 
-    def scale_loss(self, loss: torch.Tensor) -> torch.Tensor:
-        """
-        Scale loss for backward pass.
+        if not self.enabled:
+            return nullcontext()
 
-        Returns
-        -------
-        Scaled loss tensor (or original if no scaler).
-        """
-        if self.scaler is not None:
-            return self.scaler.scale(loss)
-        return loss
+        return torch.amp.autocast(
+            device_type=self.device,
+            dtype=self.dtype,
+        )
 
-    def step(self, optimizer: torch.optim.Optimizer) -> None:
-        """Perform an optimizer step (AMP‑aware)."""
-        if self.scaler is not None:
-            self.scaler.step(optimizer)
-        else:
+    # ==============================================================
+    # Backward
+    # ==============================================================
+
+    def scale_loss(self, loss: torch.Tensor):
+
+        if self.scaler is None:
+            return loss
+
+        return self.scaler.scale(loss)
+
+    # ==============================================================
+    # Optimizer
+    # ==============================================================
+
+    def step(self, optimizer):
+
+        if self.scaler is None:
             optimizer.step()
+        else:
+            self.scaler.step(optimizer)
 
-    def update(self) -> None:
-        """Update gradient scaler after each optimizer step."""
+    def update(self):
+
         if self.scaler is not None:
             self.scaler.update()
 
-    def unscale_gradients(self, optimizer: torch.optim.Optimizer) -> None:
-        """
-        Unscale gradients before clipping.
+    # ==============================================================
+    # Gradient utilities
+    # ==============================================================
 
-        Must be called before `torch.nn.utils.clip_grad_norm_`
-        when using FP16 AMP.
-        """
+    def unscale_gradients(self, optimizer):
+
         if self.scaler is not None:
             self.scaler.unscale_(optimizer)
 
-    # ------------------------------------------------------------------
-    # Introspection
-    # ------------------------------------------------------------------
+    def clip_gradients(
+        self,
+        optimizer,
+        parameters,
+        max_norm: float,
+    ):
+        """
+        AMP-safe gradient clipping.
+        """
 
-    def get_scaling_factor(self) -> float:
-        """Return current gradient scale (for logging)."""
-        if self.scaler is not None:
-            return self.scaler.get_scale()
-        return 1.0
+        if max_norm is None:
+            return
 
-    # ------------------------------------------------------------------
-    # Checkpointing
-    # ------------------------------------------------------------------
+        self.unscale_gradients(optimizer)
 
-    def state_dict(self) -> dict:
-        """Return scaler state for serialization."""
-        if self.scaler is not None:
-            return self.scaler.state_dict()
-        return {}
+        torch.nn.utils.clip_grad_norm_(
+            parameters,
+            max_norm=max_norm,
+        )
 
-    def load_state_dict(self, state_dict: dict) -> None:
-        """Restore scaler state from checkpoint."""
-        if self.scaler is not None and state_dict:
-            self.scaler.load_state_dict(state_dict)
+    # ==============================================================
+    # State
+    # ==============================================================
+
+    def state_dict(self):
+
+        if self.scaler is None:
+            return {}
+
+        return self.scaler.state_dict()
+
+    def load_state_dict(self, state):
+
+        if self.scaler is None:
+            return
+
+        if state:
+            self.scaler.load_state_dict(state)
+
+    # ==============================================================
+    # Diagnostics
+    # ==============================================================
+
+    def current_scale(self) -> float:
+
+        if self.scaler is None:
+            return 1.0
+
+        return float(self.scaler.get_scale())
+
+    def precision_name(self) -> str:
+
+        if not self.enabled:
+            return "fp32"
+
+        if self.dtype == torch.bfloat16:
+            return "bf16"
+
+        return "fp16"
+
+    def extra_state(self):
+
+        return {
+            "precision": self.precision_name(),
+            "scale": self.current_scale(),
+            "amp_enabled": self.enabled,
+        }
