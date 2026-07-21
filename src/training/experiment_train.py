@@ -7,6 +7,7 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import time
 from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from pathlib import Path
@@ -161,13 +162,44 @@ class ExperimentTrainer:
         else:
             print(f"    Scheduler: constant LR")
 
+        # Checkpoint Resumption Logic
+        start_epoch = 0
+        checkpoint_path = self.run_dir / "checkpoint_last.pth"
+        
+        if checkpoint_path.exists():
+            print(f"    ↻ Found existing checkpoint. Resuming from {checkpoint_path.name}")
+            # Use map_location to ensure safe loading across different hardware (e.g., CPU to GPU)
+            checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+            
+            # Restore states
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            
+            if scheduler is not None and checkpoint.get("scheduler_state_dict") is not None:
+                scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+                
+            if checkpoint.get("precision_state_dict") is not None:
+                self.precision.load_state_dict(checkpoint["precision_state_dict"])
+                
+            # Restore epoch and best metrics
+            start_epoch = checkpoint["epoch"]
+            self.best_val_acc = checkpoint.get("val_acc", 0.0)
+            self.best_epoch = start_epoch
+            
+            print(f"    ✓ Fast-forwarding to epoch {start_epoch + 1}. Current best val_acc: {self.best_val_acc:.4f}")
+
         # Training loop
-        for epoch in range(epochs):
+        for epoch in range(start_epoch, epochs):
+            epoch_start_time = time.time()  # START TIMING
+            
             # Training phase
             model.train()
             train_loss = 0.0
             train_correct = 0
             train_total = 0
+            
+            epoch_grad_norm = 0.0  # TRACK GRADIENT NORM
+            num_batches = 0
 
             for mel_segments, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs} [Train]", leave=False):
                 mel_segments, labels = mel_segments.to(self.device), labels.to(self.device)
@@ -179,11 +211,20 @@ class ExperimentTrainer:
                    loss = criterion(logits, labels)
 
                 self.precision.scale_loss(loss).backward()
-
+                
+                # Unscale explicitly so we can accurately measure (and clip) the gradient norm
+                self.precision.unscale_gradients(optimizer)
+                
                 gradient_clip_val = self.config["training"].get("gradient_clip")
-
-                if gradient_clip_val is not None:
-                    self.precision.clip_gradients(optimizer, model.parameters(), gradient_clip_val)
+                
+                # PyTorch's clip_grad_norm_ returns the total norm, which is perfect for logging
+                batch_norm = torch.nn.utils.clip_grad_norm_(
+                    model.parameters(), 
+                    max_norm=gradient_clip_val if gradient_clip_val is not None else float('inf')
+                ).item()
+                
+                epoch_grad_norm += batch_norm
+                num_batches += 1
 
                 self.precision.step(optimizer)
                 self.precision.update()
@@ -199,6 +240,7 @@ class ExperimentTrainer:
 
             avg_train_loss = train_loss / train_total
             train_acc = train_correct / train_total
+            avg_grad_norm = epoch_grad_norm / num_batches
 
             # Validation phase
             model.eval()
@@ -228,7 +270,11 @@ class ExperimentTrainer:
                 else:
                     scheduler.step()
 
-            # Log epoch (add LR to logs)
+            # Calculate Throughput
+            epoch_duration = time.time() - epoch_start_time
+            throughput = train_total / epoch_duration
+
+            # Log epoch
             epoch_log = {
                 'epoch': epoch + 1,
                 'train_loss': avg_train_loss,
@@ -238,11 +284,16 @@ class ExperimentTrainer:
                 'learning_rate': optimizer.param_groups[0]['lr'],  
                 "precision": self.precision.precision_name(),
                 "loss_scale": self.precision.current_scale(),
+                "grad_norm": avg_grad_norm,
+                "epoch_time_sec": epoch_duration,
+                "samples_per_sec": throughput,
             }
             self.training_history.append(epoch_log)
 
-            print(f"Epoch {epoch+1}/{epochs} | Train Loss: {avg_train_loss:.4f} | Train Acc: {train_acc:.4f} | "
-                  f"Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.4f} | LR: {optimizer.param_groups[0]['lr']:.2e}")
+            print(f"Epoch {epoch+1}/{epochs} | {epoch_duration:.1f}s ({throughput:.1f} seq/s) | "
+                  f"Train Loss: {avg_train_loss:.4f} | Train Acc: {train_acc:.4f} | "
+                  f"Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.4f} | "
+                  f"Grad Norm: {avg_grad_norm:.2f}")
             
             # TODO: memory logging every few epoch
             from src.utils.memory_utils import log_memory_usage
@@ -251,30 +302,35 @@ class ExperimentTrainer:
                 device=self.device,
             )
             
-            # Save best model
+            # Prepare checkpoint package
+            checkpoint = {
+                "epoch": epoch + 1,
+                "val_acc": val_acc,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": (
+                    scheduler.state_dict() if scheduler is not None else None
+                ),
+                "precision_state_dict": self.precision.state_dict(),
+            }
+            
+            # 1. Always save the latest epoch to allow resuming
+            torch.save(checkpoint, self.run_dir / "checkpoint_last.pth")
+            
+            # 2. Save best model
             if val_acc > self.best_val_acc:
                 self.best_val_acc = val_acc
                 self.best_epoch = epoch + 1
-                best_model_path = self.run_dir / "best_model.pth"
-                checkpoint = {
-                    "epoch": epoch + 1,
-                    "val_acc": val_acc,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "scheduler_state_dict": (
-                        scheduler.state_dict() if scheduler is not None else None
-                    ),
-                    "precision_state_dict": self.precision.state_dict(),
-                }
-                
-                torch.save(checkpoint, best_model_path)
-                print(f"    ✓ Saved best model (val_acc: {val_acc:.4f})")
+                torch.save(checkpoint, self.run_dir / "checkpoint_best.pth")
+                print(f"    ✓ Saved new best model (val_acc: {val_acc:.4f})")
 
         # Save training history
         self._save_training_history()
         
-        # Evaluate on test set with best model
-        model.load_state_dict(torch.load(self.run_dir / "best_model.pth"))
+        # Evaluate on test set with best model (FIXED DICT LOADING BUG)
+        best_checkpoint = torch.load(self.run_dir / "checkpoint_best.pth", weights_only=True)
+        model.load_state_dict(best_checkpoint["model_state_dict"])
+        
         metrics = self._evaluate(model, test_loader, class_names)
         
         # Save metrics
