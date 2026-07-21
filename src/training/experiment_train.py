@@ -2,7 +2,6 @@
 
 """Training function adapted for experiments with enhanced logging."""
 
-import os
 import json
 import pandas as pd
 import torch
@@ -13,11 +12,9 @@ from sklearn.model_selection import train_test_split
 from pathlib import Path
 from tqdm import tqdm
 from typing import Dict, Any, Tuple
-import numpy as np
 
 from src.data.dataset import BirdSongDataset
 from src.models.bird_classifier import BirdClassifier
-from src.utils.configs import resolve_metadata_csv_path
 from src.evaluation.metrics_collector import MetricsCollector
 from src.training.scheduler import create_scheduler, get_scheduler_step_frequency
 from src.training.precision import PrecisionManager
@@ -81,13 +78,17 @@ class ExperimentTrainer:
             train_dataset,
             batch_size=batch_size,
             shuffle=True,
-            num_workers=num_workers
+            num_workers=num_workers,
+            pin_memory=self.device.type == "cuda",
+            persistent_workers=num_workers > 0,
         )
         test_loader = DataLoader(
             test_dataset,
             batch_size=batch_size,
             shuffle=False,
-            num_workers=num_workers
+            num_workers=num_workers,
+            pin_memory=self.device.type == "cuda",
+            persistent_workers=num_workers > 0,
         )
         
         label_to_idx = train_dataset.label_to_idx
@@ -234,7 +235,9 @@ class ExperimentTrainer:
                 'train_acc': train_acc,
                 'val_loss': avg_val_loss,
                 'val_acc': val_acc,
-                'learning_rate': optimizer.param_groups[0]['lr'],  # NEW
+                'learning_rate': optimizer.param_groups[0]['lr'],  
+                "precision": self.precision.precision_name(),
+                "loss_scale": self.precision.current_scale(),
             }
             self.training_history.append(epoch_log)
 
@@ -246,7 +249,18 @@ class ExperimentTrainer:
                 self.best_val_acc = val_acc
                 self.best_epoch = epoch + 1
                 best_model_path = self.run_dir / "best_model.pth"
-                torch.save(model.state_dict(), best_model_path)
+                checkpoint = {
+                    "epoch": epoch + 1,
+                    "val_acc": val_acc,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "scheduler_state_dict": (
+                        scheduler.state_dict() if scheduler is not None else None
+                    ),
+                    "precision_state_dict": self.precision.state_dict(),
+                }
+                
+                torch.save(checkpoint, best_model_path)
                 print(f"    ✓ Saved best model (val_acc: {val_acc:.4f})")
 
         # Save training history
@@ -278,7 +292,8 @@ class ExperimentTrainer:
         with torch.no_grad():
             for mel_segments, labels in tqdm(test_loader, desc="Evaluating", leave=False):
                 mel_segments = mel_segments.to(self.device)
-                logits = model(mel_segments)
+                with self.precision.autocast():
+                    logits = model(mel_segments)
                 probs = torch.softmax(logits, dim=1)
                 preds = torch.argmax(logits, dim=1)
                 
