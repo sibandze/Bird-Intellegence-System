@@ -296,11 +296,12 @@ class ExperimentTrainer:
                   f"Grad Norm: {avg_grad_norm:.2f}")
             
             # TODO: memory logging every few epoch
-            from src.utils.memory_utils import log_memory_usage
-            log_memory_usage(
-                prefix=f"Epoch {epoch+1}",
-                device=self.device,
-            )
+            if epoch%10==0:
+                from src.utils.memory_utils import log_memory_usage
+                log_memory_usage(
+                    prefix=f"Epoch {epoch+1}",
+                    device=self.device,
+                )
             
             # Prepare checkpoint package
             checkpoint = {
@@ -327,7 +328,7 @@ class ExperimentTrainer:
         # Save training history
         self._save_training_history()
         
-        # Evaluate on test set with best model (FIXED DICT LOADING BUG)
+        # Evaluate on test set with best model 
         best_checkpoint = torch.load(self.run_dir / "checkpoint_best.pth", weights_only=True)
         model.load_state_dict(best_checkpoint["model_state_dict"])
         
@@ -373,15 +374,3 @@ class ExperimentTrainer:
         metrics_collector.generate_markdown_report()
         
         return metrics
-
-"""
-    TODO:
-        1. Throughput logging.
-           Record samples/second, epoch time to compare experiments.
-        2. Gradient norm logging.
-           After clipping, log it every epoch
-        3. Automatic checkpoint naming
-           Instead of best_model.pth, consider checkpoint_best.pth, checkpoint_last.pth so interrupted experiments can resume
-
-
-"""
