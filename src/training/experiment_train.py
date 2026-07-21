@@ -320,7 +320,12 @@ class ExperimentTrainer:
 
 """
     TODO:
-        1. 
+        1. Throughput logging.
+           Record samples/second, epoch time to compare experiments.
+        2. Gradient norm logging.
+           After clipping, log it every epoch
+        3. Automatic checkpoint naming
+           Instead of best_model.pth, consider checkpoint_best.pth, checkpoint_last.pth so interrupted experiments can resume
 
 
 """
