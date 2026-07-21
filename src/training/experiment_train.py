@@ -182,11 +182,7 @@ class ExperimentTrainer:
                 gradient_clip_val = self.config["training"].get("gradient_clip")
 
                 if gradient_clip_val is not None:
-                    self.precision.unscale_gradients(optimizer)
-                    torch.nn.utils.clip_grad_norm_(
-                        model.parameters(),
-                        gradient_clip_val,
-                     )
+                    self.precision.clip_gradients(optimizer, model.parameters(), gradient_clip_val)
 
                 self.precision.step(optimizer)
                 self.precision.update()
@@ -208,12 +204,11 @@ class ExperimentTrainer:
             val_loss = 0.0
             val_correct = 0
             val_total = 0
-
             with torch.no_grad():
                 for mel_segments, labels in tqdm(test_loader, desc=f"Epoch {epoch+1}/{epochs} [Val]", leave=False):
                     mel_segments, labels = mel_segments.to(self.device), labels.to(self.device)
 
-                    with self.amp_mgr.autocast():
+                    with self.precision.autocast():
                        logits = model(mel_segments)
                        loss = criterion(logits, labels)
 
