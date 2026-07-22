@@ -23,6 +23,7 @@ from src.training.precision import PrecisionManager
 from src.training.scheduler import create_scheduler, get_scheduler_step_frequency
 
 from src.utils.memory_utils import log_memory_usage
+import wandb
 
 class ExperimentTrainer:
     """Training orchestrator for experiments with comprehensive logging."""
@@ -30,7 +31,19 @@ class ExperimentTrainer:
         self.config = config
         self.run_dir = Path(run_dir)
         self.run_dir.mkdir(exist_ok=True, parents=True)
-        
+
+        # Weights & Biases Setup 
+        self.use_wandb = config.get("logging", {}).get("use_wandb", False)
+        if self.use_wandb:
+            wandb.init(
+                project=config.get("logging", {}).get("wandb_project", "bird-song-classifier"),
+                name=config.get("logging", {}).get("wandb_run_name", self.run_dir.name),
+                config=config,
+                dir=str(self.run_dir),
+                resume="allow",  # Automatically connects to existing run if resuming
+                id=config.get("logging", {}).get("wandb_run_id", self.run_dir.name),
+            )
+            
         self.device = torch.device(config['training'].get('device', 'cuda') if torch.cuda.is_available() else 'cpu')
         self.precision = PrecisionManager(
             enabled=config["training"].get("mixed_precision", {}).get("enabled", True),
@@ -326,8 +339,13 @@ class ExperimentTrainer:
                     "gpu_reserved_mb": torch.cuda.memory_reserved(self.device) / (1024 ** 2),
                     "gpu_peak_mb": torch.cuda.max_memory_allocated(self.device) / (1024 ** 2),
                 })
-                
+            
+            # Append log to training history
             self.training_history.append(epoch_log)
+
+            # Weights & Biases Logging
+            if self.use_wandb:
+                wandb.log(epoch_log, step=epoch + 1)
 
             print(f"Epoch {epoch+1}/{epochs} | {epoch_duration:.1f}s ({throughput:.1f} seq/s) | "
                   f"Train Loss: {avg_train_loss:.4f} | Train Acc: {train_acc:.4f} | "
@@ -389,6 +407,20 @@ class ExperimentTrainer:
         metrics_path = self.run_dir / "evaluation_metrics.json"
         with open(metrics_path, "w") as f:
             json.dump(metrics, f, indent=2)
+
+        # Weights & Biases Final Artifacts
+        if self.use_wandb:
+            # Summary metrics on dashboard
+            wandb.summary["best_val_acc"] = self.best_val_acc
+            wandb.summary["best_epoch"] = self.best_epoch
+            
+            # Save evaluation artifacts (plots, json summaries)
+            for artifact_file in ["confusion_matrix.png", "per_class_metrics.png", "evaluation_metrics.json"]:
+                file_path = self.run_dir / artifact_file
+                if file_path.exists():
+                    wandb.save(str(file_path), base_path=str(self.run_dir))
+                    
+            wandb.finish()
         
         return metrics
     
