@@ -1,5 +1,17 @@
 # src/training/callbacks.py
 
+# TODO:
+# Add LearningRateMonitorCallback.
+# Add TensorBoardLoggerCallback.
+# Add RichProgressBarCallback.
+# Add ModelSummaryCallback.
+# Add GradientNormMonitorCallback.
+# Add ExponentialMovingAverageCallback (EMA).
+# Add StochasticWeightAveragingCallback (SWA).
+# Add ProfilerCallback for PyTorch Profiler.
+# Add LRFinderCallback.
+# Add ConfusionMatrixCallback during validation
+
 import csv
 import json
 from pathlib import Path
