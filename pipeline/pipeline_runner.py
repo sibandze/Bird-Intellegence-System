@@ -1,5 +1,5 @@
 # pipeline/pipeline_runner.py
-"""Runner for data downloading and spectrogram preprocessing pipeline."""
+"""Runner script for data downloading and preprocessing pipeline."""
 
 import argparse
 import sys
@@ -23,18 +23,19 @@ def main():
         default="configs/config.yaml",
         help="Path to config file relative to project root (default: configs/config.yaml)",
     )
+    parser.add_argument(
+        "--full-dataset",
+        action="store_true",
+        help="Process the entire dataset without class balancing/filtering",
+    )
 
     args = parser.parse_args()
 
-    print("\n" + "=" * 80)
-    print("🚀 Starting Data Pipeline")
-    print("=" * 80 + "\n")
-
-    # Load and resolve paths (absolute paths + derived audio segment_size)
+    # Load and resolve paths
     resolved_config = load_and_resolve_config(ROOT_DIR, args.config)
 
-    # Run execution
-    run_data_pipeline(resolved_config)
+    # Execute data processing pipeline
+    run_data_pipeline(resolved_config, use_full_dataset=args.full_dataset)
 
 
 if __name__ == "__main__":
