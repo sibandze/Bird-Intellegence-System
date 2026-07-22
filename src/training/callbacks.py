@@ -1,7 +1,7 @@
 # src/training/callbacks.py
 
-import json
 import csv
+import json
 from pathlib import Path
 from typing import Dict, Any, Optional
 import torch
@@ -13,16 +13,31 @@ except ImportError:
 
 
 class Callback:
-    """Base class for training callbacks."""
+    """Base class for all training callbacks."""
+    
+    # --- Lifecycle Hooks ---
     def on_train_begin(self, trainer: Any): pass
     def on_train_end(self, trainer: Any): pass
+    
     def on_epoch_begin(self, trainer: Any, epoch: int): pass
     def on_epoch_end(self, trainer: Any, epoch: int, logs: Dict[str, Any]): pass
+    
+    def on_batch_begin(self, trainer: Any, batch: int, logs: Dict[str, Any]): pass
     def on_batch_end(self, trainer: Any, batch: int, logs: Dict[str, Any]): pass
+    
+    def on_validation_begin(self, trainer: Any): pass
+    def on_validation_end(self, trainer: Any, logs: Dict[str, Any]): pass
+
+    # --- State Serialization for Seamless Resume ---
+    def state_dict(self) -> Dict[str, Any]:
+        return {}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]):
+        pass
 
 
 class CallbackRunner:
-    """Executes a list of callbacks in sequence."""
+    """Executes callbacks in ordered sequence and manages collective callback states."""
     def __init__(self, callbacks: list[Callback]):
         self.callbacks = callbacks or []
 
@@ -37,6 +52,29 @@ class CallbackRunner:
 
     def on_epoch_end(self, trainer, epoch: int, logs: Dict[str, Any]):
         for cb in self.callbacks: cb.on_epoch_end(trainer, epoch, logs)
+
+    def on_batch_begin(self, trainer, batch: int, logs: Dict[str, Any]):
+        for cb in self.callbacks: cb.on_batch_begin(trainer, batch, logs)
+
+    def on_batch_end(self, trainer, batch: int, logs: Dict[str, Any]):
+        for cb in self.callbacks: cb.on_batch_end(trainer, batch, logs)
+
+    def on_validation_begin(self, trainer):
+        for cb in self.callbacks: cb.on_validation_begin(trainer)
+
+    def on_validation_end(self, trainer, logs: Dict[str, Any]):
+        for cb in self.callbacks: cb.on_validation_end(trainer, logs)
+
+    def state_dict(self) -> Dict[str, Any]:
+        return {cb.__class__.__name__: cb.state_dict() for cb in self.callbacks}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]):
+        if not state_dict:
+            return
+        for cb in self.callbacks:
+            name = cb.__class__.__name__
+            if name in state_dict:
+                cb.load_state_dict(state_dict[name])
 
 
 # =====================================================================
@@ -64,7 +102,17 @@ class EarlyStoppingCallback(Callback):
             self.patience_counter += 1
             if self.patience_counter >= self.patience:
                 print(f"\n ⏹ Early stopping triggered! No improvement in '{self.monitor}' for {self.patience} epochs.")
-                trainer.stop_training = True
+                trainer.request_stop()
+
+    def state_dict(self) -> Dict[str, Any]:
+        return {
+            "best_score": self.best_score,
+            "patience_counter": self.patience_counter,
+        }
+
+    def load_state_dict(self, state_dict: Dict[str, Any]):
+        self.best_score = state_dict.get("best_score", self.best_score)
+        self.patience_counter = state_dict.get("patience_counter", self.patience_counter)
 
 
 # =====================================================================
@@ -88,9 +136,12 @@ class CheckpointCallback(Callback):
             "optimizer_state_dict": trainer.optimizer.state_dict(),
             "scheduler_state_dict": trainer.scheduler.state_dict() if trainer.scheduler else None,
             "precision_state_dict": trainer.precision.state_dict(),
+            "callbacks_state_dict": trainer.cb_runner.state_dict(),  # Callback state preserved
             "torch_rng_state": torch.get_rng_state(),
             "cuda_rng_state": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             "git_commit": getattr(trainer, "git_hash", None),
+            "torch_version": torch.__version__,
+            "cuda_version": torch.version.cuda if torch.cuda.is_available() else None,
         }
 
         # 1. Always save latest state for seamless resuming
@@ -107,6 +158,12 @@ class CheckpointCallback(Callback):
             torch.save(checkpoint, self.run_dir / "checkpoint_best.pth")
             torch.save(trainer.model.state_dict(), self.run_dir / "best_model.pth")
             print(f"    ✓ Saved new best model ({self.monitor}: {current_score:.4f})")
+
+    def state_dict(self) -> Dict[str, Any]:
+        return {"best_score": self.best_score}
+
+    def load_state_dict(self, state_dict: Dict[str, Any]):
+        self.best_score = state_dict.get("best_score", self.best_score)
 
 
 # =====================================================================
@@ -162,6 +219,8 @@ class WandBLoggerCallback(Callback):
             resume="allow",
             id=log_cfg.get("wandb_run_id", self.run_dir.name),
         )
+        # Watch gradients and parameters
+        wandb.watch(trainer.model, log="gradients", log_freq=100)
 
     def on_epoch_end(self, trainer, epoch: int, logs: Dict[str, Any]):
         if not self.enabled: return
