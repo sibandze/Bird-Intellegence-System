@@ -3,23 +3,26 @@
 """Training function adapted for experiments with enhanced logging."""
 
 import json
+import subprocess
+import time
+from pathlib import Path
+from typing import Dict, Any, Tuple
+
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import time
-from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
-from pathlib import Path
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-from typing import Dict, Any, Tuple
 
 from src.data.dataset import BirdSongDataset
-from src.models.bird_classifier import BirdClassifier
 from src.evaluation.metrics_collector import MetricsCollector
-from src.training.scheduler import create_scheduler, get_scheduler_step_frequency
+from src.models.bird_classifier import BirdClassifier
 from src.training.precision import PrecisionManager
+from src.training.scheduler import create_scheduler, get_scheduler_step_frequency
 
+from src.utils.memory_utils import log_memory_usage
 
 class ExperimentTrainer:
     """Training orchestrator for experiments with comprehensive logging."""
@@ -36,6 +39,7 @@ class ExperimentTrainer:
         )
         
         self.best_val_acc = 0.0
+        self.best_val_loss = float('inf')  
         self.best_epoch = 0
         
         # Load existing history if resuming, otherwise start fresh
@@ -45,7 +49,18 @@ class ExperimentTrainer:
                 self.training_history = json.load(f)
         else:
             self.training_history = []
-    
+            
+        # Save config for reproducibility
+        config_path = self.run_dir / "config.json"
+        if not config_path.exists():
+            with open(config_path, "w") as f:
+                json.dump(self.config, f, indent=2)
+                
+        # Fetch Git Commit Hash
+        try:
+            self.git_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
+        except Exception:
+            self.git_hash = None
     
     def get_dataloaders(self, df: pd.DataFrame) -> Tuple[DataLoader, DataLoader, Dict[str, int], Dict[int, str]]:
         """Create train/val dataloaders and label mappings."""
@@ -138,6 +153,17 @@ class ExperimentTrainer:
             num_classes=self.config["data"]["num_classes"],
             time_steps=self.config["audio"]["segment_size"],
         ).to(self.device)
+        
+        # Record Parameter count
+        num_params = sum(p.numel() for p in model.parameters())
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"    Parameters: {num_params:,}")
+        print(f"    Trainable : {trainable_params:,}")
+        
+        # Add compile support (PyTorch 2)
+        if self.config["training"].get("compile_model", False):
+            print("    Compiling model with torch.compile()...")
+            model = torch.compile(model)
 
         # Setup training
         criterion = nn.CrossEntropyLoss()
@@ -170,15 +196,15 @@ class ExperimentTrainer:
             print(f"    Scheduler: constant LR")
 
         # Checkpoint Resumption Logic
-        start_epoch = 0
+        resume_epoch = 0 
+        epochs_without_improvement = 0 
+        patience = self.config["training"].get("patience", 15)
         checkpoint_path = self.run_dir / "checkpoint_last.pth"
         
         if checkpoint_path.exists():
             print(f"    ↻ Found existing checkpoint. Resuming from {checkpoint_path.name}")
-            # Use map_location to ensure safe loading across different hardware (e.g., CPU to GPU)
             checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
             
-            # Restore states
             model.load_state_dict(checkpoint["model_state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             
@@ -188,29 +214,33 @@ class ExperimentTrainer:
             if checkpoint.get("precision_state_dict") is not None:
                 self.precision.load_state_dict(checkpoint["precision_state_dict"])
                 
-            # Restore epoch and best metrics
-            start_epoch = checkpoint["epoch"]
+            # Restore RNG States
+            if "torch_rng_state" in checkpoint:
+                torch.set_rng_state(checkpoint["torch_rng_state"])
+            if checkpoint.get("cuda_rng_state") is not None and torch.cuda.is_available():
+                torch.cuda.set_rng_state_all(checkpoint["cuda_rng_state"])
+                
+            resume_epoch = checkpoint["epoch"]
             self.best_val_acc = checkpoint.get("val_acc", 0.0)
-            self.best_epoch = start_epoch
+            self.best_val_loss = checkpoint.get("val_loss", float('inf'))
+            epochs_without_improvement = checkpoint.get("epochs_without_improvement", 0)
             
-            print(f"    ✓ Fast-forwarding to epoch {start_epoch + 1}. Current best val_acc: {self.best_val_acc:.4f}")
+            print(f"    ✓ Fast-forwarding to epoch {resume_epoch + 1}. Current best val_acc: {self.best_val_acc:.4f}")
 
         # Training loop
-        for epoch in range(start_epoch, epochs):
-            epoch_start_time = time.time()  # START TIMING
+        for epoch in range(resume_epoch, epochs):
+            epoch_start_time = time.time()
             
             # Training phase
             model.train()
             train_loss = 0.0
             train_correct = 0
             train_total = 0
-            
-            epoch_grad_norm = 0.0  # TRACK GRADIENT NORM
+            epoch_grad_norm = 0.0
             num_batches = 0
 
             for mel_segments, labels in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs} [Train]", leave=False):
                 mel_segments, labels = mel_segments.to(self.device), labels.to(self.device)
-
                 optimizer.zero_grad(set_to_none=True)
 
                 with self.precision.autocast():
@@ -218,13 +248,9 @@ class ExperimentTrainer:
                    loss = criterion(logits, labels)
 
                 self.precision.scale_loss(loss).backward()
-                
-                # Unscale explicitly so we can accurately measure (and clip) the gradient norm
                 self.precision.unscale_gradients(optimizer)
                 
                 gradient_clip_val = self.config["training"].get("gradient_clip")
-                
-                # PyTorch's clip_grad_norm_ returns the total norm, which is perfect for logging
                 batch_norm = torch.nn.utils.clip_grad_norm_(
                     model.parameters(), 
                     max_norm=gradient_clip_val if gradient_clip_val is not None else float('inf')
@@ -236,7 +262,6 @@ class ExperimentTrainer:
                 self.precision.step(optimizer)
                 self.precision.update()
 
-                # Step scheduler per batch
                 if scheduler is not None and step_frequency == 'batch':
                     scheduler.step()
 
@@ -270,31 +295,38 @@ class ExperimentTrainer:
             avg_val_loss = val_loss / val_total
             val_acc = val_correct / val_total
 
-            # Step scheduler per epoch
             if scheduler is not None and step_frequency == 'epoch':
                 if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
                     scheduler.step(avg_val_loss)
                 else:
                     scheduler.step()
 
-            # Calculate Throughput
             epoch_duration = time.time() - epoch_start_time
             throughput = train_total / epoch_duration
+            current_lr = optimizer.param_groups[0]["lr"] 
 
-            # Log epoch
             epoch_log = {
                 'epoch': epoch + 1,
                 'train_loss': avg_train_loss,
                 'train_acc': train_acc,
                 'val_loss': avg_val_loss,
                 'val_acc': val_acc,
-                'learning_rate': optimizer.param_groups[0]['lr'],  
+                'learning_rate': current_lr,  
                 "precision": self.precision.precision_name(),
                 "loss_scale": self.precision.current_scale(),
                 "grad_norm": avg_grad_norm,
                 "epoch_time_sec": epoch_duration,
                 "samples_per_sec": throughput,
             }
+            
+            # Log GPU memory into history
+            if self.device.type == "cuda":
+                epoch_log.update({
+                    "gpu_allocated_mb": torch.cuda.memory_allocated(self.device) / (1024 ** 2),
+                    "gpu_reserved_mb": torch.cuda.memory_reserved(self.device) / (1024 ** 2),
+                    "gpu_peak_mb": torch.cuda.max_memory_allocated(self.device) / (1024 ** 2),
+                })
+                
             self.training_history.append(epoch_log)
 
             print(f"Epoch {epoch+1}/{epochs} | {epoch_duration:.1f}s ({throughput:.1f} seq/s) | "
@@ -302,35 +334,47 @@ class ExperimentTrainer:
                   f"Val Loss: {avg_val_loss:.4f} | Val Acc: {val_acc:.4f} | "
                   f"Grad Norm: {avg_grad_norm:.2f}")
             
-            # TODO: memory logging every few epoch
-            if epoch%10==0:
-                from src.utils.memory_utils import log_memory_usage
-                log_memory_usage(
-                    prefix=f"Epoch {epoch+1}",
-                    device=self.device,
-                )
+            if epoch % 10 == 0:
+                log_memory_usage(prefix=f"Epoch {epoch+1}", device=self.device)
             
             # Prepare checkpoint package
             checkpoint = {
                 "epoch": epoch + 1,
                 "val_acc": val_acc,
+                "val_loss": avg_val_loss,
+                "epochs_without_improvement": epochs_without_improvement,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
-                "scheduler_state_dict": (
-                    scheduler.state_dict() if scheduler is not None else None
-                ),
+                "scheduler_state_dict": scheduler.state_dict() if scheduler is not None else None,
                 "precision_state_dict": self.precision.state_dict(),
+                "torch_rng_state": torch.get_rng_state(),
+                "cuda_rng_state": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
+                "git_commit": self.git_hash,
             }
             
-            # 1. Always save the latest epoch to allow resuming
+            # Always save the latest epoch to allow resuming
             torch.save(checkpoint, self.run_dir / "checkpoint_last.pth")
             
-            # 2. Save best model
+            # Save "last_model.pth" (weights only, for inference)
+            torch.save(model.state_dict(), self.run_dir / "last_model.pth")
+            
+            # Save best model (Intertwined with Early Stopping logic)
             if val_acc > self.best_val_acc:
                 self.best_val_acc = val_acc
+                self.best_val_loss = avg_val_loss
                 self.best_epoch = epoch + 1
+                epochs_without_improvement = 0
+                
                 torch.save(checkpoint, self.run_dir / "checkpoint_best.pth")
+                torch.save(model.state_dict(), self.run_dir / "best_model.pth")
                 print(f"    ✓ Saved new best model (val_acc: {val_acc:.4f})")
+            else:
+                epochs_without_improvement += 1
+                
+            # Early Stopping Check
+            if epochs_without_improvement >= patience:
+                print(f"\n    ⏹ Early stopping triggered! No improvement for {patience} epochs.")
+                break
 
         # Save training history
         self._save_training_history()
@@ -357,16 +401,17 @@ class ExperimentTrainer:
     def _evaluate(self, model: nn.Module, test_loader: DataLoader, class_names: list) -> Dict:
         """Evaluate model on test set and collect metrics."""
         model.eval()
-        
         metrics_collector = MetricsCollector(self.run_dir, class_names)
         
         with torch.no_grad():
             for mel_segments, labels in tqdm(test_loader, desc="Evaluating", leave=False):
                 mel_segments = mel_segments.to(self.device)
+                
+                # Wrap eval operations entirely in autocast
                 with self.precision.autocast():
                     logits = model(mel_segments)
-                probs = torch.softmax(logits, dim=1)
-                preds = torch.argmax(logits, dim=1)
+                    probs = torch.softmax(logits, dim=1)
+                    preds = torch.argmax(logits, dim=1)
                 
                 metrics_collector.add_batch(
                     preds.cpu().numpy(),
