@@ -43,7 +43,42 @@ class SelfAttention(nn.Module):
         V = V.view(N, seq_len, self.heads, self.head_dim).transpose(1, 2)
         K = K.view(N, seq_len, self.heads, self.head_dim).transpose(1, 2)
         Q = Q.view(N, seq_len, self.heads, self.head_dim).transpose(1, 2)
-
+        # -----------------------------------------------------------------------------
+        # TODO (Performance Optimization)
+        #
+        # Replace this manual scaled dot-product attention implementation with
+        # torch.nn.functional.scaled_dot_product_attention() once the core model
+        # architecture is finalized and profiling indicates attention is a bottleneck.
+        #
+        # Benefits:
+        #   - Uses PyTorch's fused CUDA kernels (FlashAttention when available)
+        #   - Lower GPU memory usage
+        #   - Faster training and inference
+        #   - Better support for FP16/BF16 mixed precision
+        #
+        # Current implementation is intentionally kept explicit because it:
+        #   - is easier to understand and debug
+        #   - exposes intermediate attention weights for visualization/research
+        #   - matches the equations presented in transformer literature
+        #
+        # Proposed replacement:
+        #
+        #     import torch.nn.functional as F
+        #
+        #     out = F.scaled_dot_product_attention(
+        #         Q,
+        #         K,
+        #         V,
+        #         attn_mask=mask,
+        #         dropout_p=self.dropout.p if self.training else 0.0,
+        #         is_causal=False,
+        #     )
+        #
+        # Before switching:
+        #   - Verify mask format (bool or additive mask)
+        #   - Benchmark training throughput
+        #   - Confirm attention visualization is still available if needed
+        # -----------------------------------------------------------------------------
         # Scaled dot-product attention
         # Q @ K^T -> [N, heads, seq_len, seq_len]
         energy = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.head_dim)
